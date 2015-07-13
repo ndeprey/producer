@@ -31,7 +31,7 @@ get_episode_ratings <- function(ratings_story_id,driver=m,group="stage4-infinite
       )
       rs <- dbSendQuery(con, SQLstatement)
       df <- fetch(rs, n=-1)
-
+      dbDisconnect(con)
       return(df)
 }
 
@@ -49,7 +49,7 @@ get_episode_name <- function(id, driver=m, group="stage4-infinite"){
       )
       rs <- dbSendQuery(con, SQLstatement)
       df <- fetch(rs, n=-1)
-
+      dbDisconnect(con)
       return(df)
 }
 
@@ -59,14 +59,16 @@ get_other_episode_ratings <- function(ratings_story_id, start.date,end.date,driv
   con <- dbConnect(m, group = group)
   SQLstatement <- paste("SELECT ratings_story_id, ratings_rating, ratings_elapsed, ratings_origin, ratings_timestamp
                           from infinite.user_ratings ur
-                          join cms.object_assign oa
+                          join cms.thing
+			  on ur.ratings_story_id = thing.thing_id
+			  join cms.object_assign oa
                           on ur.ratings_story_id = oa.object_child_id
                           where object_parent_id = (
                             						SELECT object_parent_id from cms.object_assign
                           							WHERE object_child_id = ",ratings_story_id,
                           							" and object_parent_type_id = 31)
-                          and date(ratings_timestamp) >= '",start.date,"'
-                          and date(ratings_timestamp) <= '",end.date,"'
+                          and thing_date >= '",start.date,"'
+                          and thing_date <= '",end.date,"'
                           and ratings_user_id < 1000000000
                           and ratings_platform in ('ANDROID','IPHONE','WINDOWPH',1)
                           and ratings_rating in ('COMPLETED','SKIP','THUMBUP','SHARE','START','SRCHSTART','SRCHCOMPL')
@@ -75,7 +77,7 @@ get_other_episode_ratings <- function(ratings_story_id, start.date,end.date,driv
   )
   rs <- dbSendQuery(con, SQLstatement)
   df <- fetch(rs, n=-1)
-  
+  dbDisconnect(con)	
   return(df)
 }
 
@@ -106,7 +108,8 @@ Combine_data <- function(ep,other_eps){
         ################################
         # Graph other episodes average #
         ################################
-        
+        #if(nrow(other_eps) >= 0)
+	
         other_episode_table <- data.frame(table(other_eps$ratings_story_id))
         other_eps <- other_eps[other_eps$ratings_story_id %in% other_episode_table$Var1[other_episode_table$Freq >= 200],]
         oet <- data.frame(table(other_eps$ratings_story_id))
@@ -200,21 +203,33 @@ Main_Function <- function(id, start.date, end.date){
 #    )
 
 shinyServer(function(input, output) {
+  #another reactive function for getting episode IDs from
+  
+  #get_episode_IDSfromprogramname <- reactive({
+  #  ##some function that relies on input$program_name
+  #  
+  #})
+  
+  #output$Episode_IDs <- renderText({
+  #  get_episode_IDSfromprogramname()
+  #  })
+  
   
   outs <- reactive({
-    outs <- Main_Function(id=input$episode_id,
+    Main_Function(id=input$episode_id,
                         start.date=input$start.end.date[1],
                         end.date=input$start.end.dates[2]
                         )
   })
   
   output$minutes_elapsed <- renderPlot({
-        outs <- Main_Function(id=input$episode_id,
-                        start.date=input$start.end.date[1],
-                        end.date=input$start.end.dates[2]
-                        )
+        #outs <- Main_Function(id=input$episode_id,
         
-        ggplot(outs$graph_this,aes(x=minutes_elapsed)) +
+	#                start.date=input$start.end.date[1],
+        #                end.date=input$start.end.dates[2]
+        #                )
+        
+        ggplot(outs()$graph_this,aes(x=minutes_elapsed)) +
             geom_line(aes(y=episode, colour="This Episode")) +
             geom_line(aes(y=all_other, colour="Average of Similar Episodes")) +
             xlab('Minutes Elapsed') +
@@ -233,16 +248,16 @@ shinyServer(function(input, output) {
   })
   
   output$all_text <- renderUI({
-    outs <- Main_Function(id=input$episode_id,
-                        start.date=input$start.end.date[1],
-                        end.date=input$start.end.dates[2]
-                        )
+    #outs <- Main_Function(id=input$episode_id,
+    #                    start.date=input$start.end.date[1],
+    #                    end.date=input$start.end.dates[2]
+    #                    )
     
-    str1 <- paste("Looking at episode <b>", outs$titles$episode,"</b> from <b>",outs$titles$podcast,"</b>",sep='')
-    str2 <- paste("Total Listens in NPR One: <b>", sum(outs$stats$episode_summary$TOTAL),"</b>",sep='')
-    str3 <- paste("Comparing to",nrow(outs$stats$other_episode_summary),"similar episodes of the same program with roughly equal durations in the date range specified", sep=' ')
-    str4 <- paste("This episode's skip rate was ",round(100*outs$stats$episode_skip_rate,1),"%, versus a skip rate of ",round(100*outs$stats$other_episode_average_skip_rate,1),"% across similar episodes",sep='')
-    str5 <- paste("This episode's Mark Interesting / Share rate was ",round(100*outs$stats$episode_thumbup_share_rate,1),"% versus a rate of ",round(100*outs$stats$other_episode_average_thumbup_share_rate,1),"% across similar episodes",sep='')
+    str1 <- paste("<h1><b>", outs()$titles$episode,"</b> from <b>",outs()$titles$podcast,"</b></h1>",sep='')
+    str2 <- paste("Total Listens in NPR One: <b>", sum(outs()$stats$episode_summary$TOTAL),"</b>",sep='')
+    str3 <- paste("Comparing to <b>",nrow(outs()$stats$other_episode_summary),"similar episodes </b> of the same program with roughly equal durations in the date range specified", sep=' ')
+    str4 <- paste("This episode's skip rate was ",round(100*outs()$stats$episode_skip_rate,1),"%, versus a skip rate of ",round(100*outs()$stats$other_episode_average_skip_rate,1),"% across similar episodes",sep='')
+    str5 <- paste("This episode's Mark Interesting / Share rate was ",round(100*outs()$stats$episode_thumbup_share_rate,1),"% versus a rate of ",round(100*outs()$stats$other_episode_average_thumbup_share_rate,1),"% across similar episodes",sep='')
     HTML(paste(str1, str2, str3, str4, str5, sep = '<br/>'))
   })
   

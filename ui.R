@@ -14,7 +14,7 @@ shinyUI(fluidPage(
   # Application title
   titlePanel("Podcast Producers Report"),
   helpText("May take 1-2 minutes to update."),
-  helpText("Work in progress"),
+  helpText("Work in progress."),
   
   # Sidebar with a slider input for the number of bins
   sidebarLayout(
